@@ -1,0 +1,11 @@
+gradio
+nnunetv2
+nibabel
+matplotlib
+pandas
+torch
+torchvision
+torchaudio
+numpy
+Pillow
+psutil

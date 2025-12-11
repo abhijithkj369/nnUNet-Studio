@@ -1,0 +1,25 @@
+# Git
+.git
+.gitignore
+
+# Python
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.Python
+env
+venv
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Data Directories (too large for build context, mount them instead)
+nnUNet_raw
+nnUNet_preprocessed
+nnUNet_results
+data
+plots
+
+# IDEs
+.vscode
+.idea

@@ -1,0 +1,28 @@
+
+
+services:
+  nnunet-tool:
+    build: .
+    container_name: nnunet-training-ui
+    ports:
+      - "7860:7860"
+    volumes:
+      # Persist data directories
+      - ./nnUNet_raw:/app/nnUNet_raw
+      - ./nnUNet_preprocessed:/app/nnUNet_preprocessed
+      - ./nnUNet_results:/app/nnUNet_results
+      - ./plots:/app/plots
+      
+      # Mount your input data folder here if needed
+      # - ./my_data:/app/data
+    
+    # Enable GPU support if available (requires nvidia-container-toolkit)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    
+    restart: unless-stopped

@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+.env
+
+# IDEs
+.vscode/
+.idea/
+
+# nnUNet Data (Large files)
+nnUNet_raw/
+nnUNet_preprocessed/
+nnUNet_results/
+
+# Generated Plots
+plots/
+test_plots/
+
+# Logs
+*.log
+training_log_*.txt
+
+# Temporary/Utility Scripts (Optional - uncomment to ignore)
+# reproduce_issue.py
+# verify_plots.py
