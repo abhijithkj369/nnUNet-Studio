@@ -133,6 +133,7 @@ class nnUNetTrainer:
                       plans: str = "nnUNetPlans",
                       configuration: str = "3d_fullres",
                       num_epochs: int = 100,
+                      num_workers: int = 8,
                       log_callback: Optional[Callable] = None) -> tuple[bool, str]:
         """
         Start nnUNet training
@@ -144,6 +145,7 @@ class nnUNetTrainer:
             plans: Plans identifier
             configuration: Configuration (2d, 3d_fullres, 3d_lowres, 3d_cascade_fullres)
             num_epochs: Number of epochs to train
+            num_workers: Number of data loading workers
             log_callback: Callback function for log messages
             
         Returns:
@@ -151,6 +153,9 @@ class nnUNetTrainer:
         """
         try:
             self.setup_environment()
+            
+            # Set number of workers
+            os.environ['nnUNet_n_proc_DA'] = str(num_workers)
             
             # Build training command
             # Use python -m to call nnUNetv2 modules (works better on Windows)

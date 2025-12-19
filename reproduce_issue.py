@@ -1,59 +1,67 @@
 import sys
 import os
+import time
+import matplotlib
+import matplotlib.style
+from backend.plotter import MetricsPlotter
 
-# Add current directory to path
-sys.path.append(os.getcwd())
+def test_init():
+    print("Testing initialization...")
+    try:
+        plotter = MetricsPlotter(output_dir="./test_plots")
+        print("Initialization successful.")
+    except Exception as e:
+        print(f"Initialization failed: {e}")
+        sys.exit(1)
 
-from backend.metrics_parser import MetricsParser
+def test_warnings():
+    print("Testing for warnings...")
+    plotter = MetricsPlotter(output_dir="./test_plots")
+    
+    # Test case 1: Empty data
+    print("1. Testing empty data...")
+    try:
+        plotter.plot_losses([], [], [])
+    except Exception as e:
+        print(f"Error: {e}")
 
-def test_multiline_parsing():
-    parser = MetricsParser(max_epochs=100)
+    # Test case 2: Mismatched data
+    print("2. Testing mismatched data...")
+    try:
+        plotter.plot_losses([1], [], []) 
+    except Exception as e:
+        print(f"Error: {e}")
+
+def test_memory_allocation():
+    print("\nTesting memory allocation (looping 100 times)...")
+    plotter = MetricsPlotter(output_dir="./test_plots")
     
-    # Simulate log lines
-    logs = [
-        "2025-12-11 17:07:02.573555: Epoch 0 ",
-        "2025-12-11 17:07:50.431181: train_loss -0.2512 ",
-        "2025-12-11 17:07:50.431692: val_loss -0.3853 ",
-        "2025-12-11 17:07:50.439940: Pseudo dice [np.float32(0.582), np.float32(0.5658)] ",
-        "2025-12-11 17:07:51.048797: Epoch 1 ",
-        "2025-12-11 17:08:35.329361: train_loss -0.6552 ",
-        "2025-12-11 17:08:35.329361: val_loss -0.6187 ",
-        "2025-12-11 17:08:35.337475: Pseudo dice [np.float32(0.7855), np.float32(0.7561)] "
-    ]
+    # Simulate data
+    epochs = list(range(100))
+    train_losses = [0.5] * 100
+    val_losses = [0.6] * 100
+    dice_scores = [0.8] * 100
     
-    print("Simulating log stream...")
-    for line in logs:
-        print(f"Processing: {line.strip()}")
-        parser.update_from_line(line)
-        
-    metrics = parser.get_metrics()
-    print("\nExtracted Metrics:")
-    print(f"Epochs: {metrics.epochs}")
-    print(f"Train Losses: {metrics.train_losses}")
-    print(f"Val Losses: {metrics.val_losses}")
-    print(f"Dice Scores: {metrics.dice_scores}")
+    plot_data = {
+        'epochs': epochs,
+        'train_losses': train_losses,
+        'val_losses': val_losses,
+        'dice_scores': dice_scores
+    }
     
-    # Verification
-    assert len(metrics.epochs) == 2, f"Expected 2 epochs, got {len(metrics.epochs)}"
-    assert len(metrics.train_losses) == 2, "Missing train losses"
-    assert len(metrics.dice_scores) == 2, "Missing dice scores"
-    
-    # Check values for Epoch 0
-    assert metrics.epochs[0] == 0
-    assert metrics.train_losses[0] == -0.2512
-    assert abs(metrics.dice_scores[0] - 0.5739) < 0.001  # (0.582 + 0.5658)/2 = 0.5739
-    
-    # Check values for Epoch 1
-    assert metrics.epochs[1] == 1
-    assert metrics.train_losses[1] == -0.6552
-    
-    # Check progress
-    curr, total, pct = parser.get_progress()
-    print(f"\nProgress: Epoch {curr}/{total} ({pct}%)")
-    assert curr == 2  # 0-indexed, so finished epoch 1 means current is 2 (or 1 depending on interpretation, let's check code)
-    # Code: current = self.current_epoch + 1. current_epoch is 1. So returns 2.
-    
-    print("\nSUCCESS: Multi-line parsing verified!")
+    start_time = time.time()
+    for i in range(100):
+        if i % 10 == 0:
+            print(f"Iteration {i}...")
+        try:
+            plotter.create_all_plots(plot_data)
+        except Exception as e:
+            print(f"Failed at iteration {i}: {e}")
+            break
+            
+    print(f"Finished in {time.time() - start_time:.2f}s")
 
 if __name__ == "__main__":
-    test_multiline_parsing()
+    test_init()
+    test_warnings()
+    test_memory_allocation()

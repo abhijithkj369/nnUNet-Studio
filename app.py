@@ -152,7 +152,7 @@ def scan_datasets(nnunet_preprocessed):
 
 
 def start_training_process(dataset_selection, num_epochs, fold, configuration, 
-                          nnunet_raw, nnunet_preprocessed, nnunet_results, progress=gr.Progress()):
+                          nnunet_raw, nnunet_preprocessed, nnunet_results, num_workers, progress=gr.Progress()):
     """Start the training process"""
     global current_trainer, metrics_parser, plotter, training_logs
     
@@ -195,6 +195,7 @@ def start_training_process(dataset_selection, num_epochs, fold, configuration,
             fold=fold,
             num_epochs=num_epochs,
             configuration=configuration,
+            num_workers=int(num_workers),
             log_callback=log_callback
         )
         
@@ -480,6 +481,14 @@ with gr.Blocks(title=config.UI_TITLE) as app:
                     with gr.Row():
                         fold_input = gr.Number(label="Fold", value=0, precision=0)
                         num_epochs_input = gr.Number(label="Epochs", value=config.DEFAULT_EPOCHS, precision=0)
+                        num_workers_input = gr.Slider(
+                            label="Number of Workers", 
+                            value=config.DEFAULT_NUM_WORKERS, 
+                            minimum=0, 
+                            maximum=16, 
+                            step=1,
+                            info="Reduce this if you encounter memory errors (e.g., 2 for Windows)"
+                        )
                 
                 with gr.Column():
                     gr.Markdown("**Control**")
@@ -523,7 +532,7 @@ with gr.Blocks(title=config.UI_TITLE) as app:
             start_train_btn.click(
                 fn=start_training_process,
                 inputs=[dataset_dropdown, num_epochs_input, fold_input, config_dropdown,
-                       nnunet_raw_input, nnunet_preprocessed_input, nnunet_results_input],
+                       nnunet_raw_input, nnunet_preprocessed_input, nnunet_results_input, num_workers_input],
                 outputs=[train_status, loss_plot, dice_plot]
             )
             

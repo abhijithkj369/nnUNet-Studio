@@ -17,6 +17,7 @@ DEFAULT_EPOCHS = 100
 DEFAULT_DATASET_ID = 1
 DEFAULT_TRAINER = "nnUNetTrainer"
 DEFAULT_PLANS = "nnUNetPlans"
+DEFAULT_NUM_WORKERS = 2 if os.name == 'nt' else 8
 
 # UI Settings
 UI_TITLE = "nnUNetv2 Training Interface"
