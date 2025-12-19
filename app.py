@@ -309,20 +309,26 @@ def stop_training():
     return "⚠️ No trainer instance found"
 
 # Inference Functions
-def refresh_inference_models():
+def refresh_inference_models(nnunet_results, nnunet_raw):
+    inference_manager.nnunet_results = Path(nnunet_results)
+    inference_manager.nnunet_raw = Path(nnunet_raw)
     models = inference_manager.list_models()
     return gr.Dropdown(choices=models)
 
-def refresh_folds(model_name, configuration):
+def refresh_folds(model_name, configuration, nnunet_results, nnunet_raw):
     if not model_name or not configuration:
         return gr.Dropdown(choices=[], interactive=True, allow_custom_value=True)
+    inference_manager.nnunet_results = Path(nnunet_results)
+    inference_manager.nnunet_raw = Path(nnunet_raw)
     folds = inference_manager.list_folds(model_name, configuration=configuration)
     return gr.Dropdown(choices=folds, interactive=True, allow_custom_value=True)
 
-def run_inference_ui(model_name, input_folder, output_folder, fold, configuration):
+def run_inference_ui(model_name, input_folder, output_folder, fold, configuration, nnunet_results, nnunet_raw):
     if not model_name or not input_folder or not output_folder or not fold or not configuration:
         return "❌ Please fill all fields"
     
+    inference_manager.nnunet_results = Path(nnunet_results)
+    inference_manager.nnunet_raw = Path(nnunet_raw)
     success, msg = inference_manager.run_inference(model_name, input_folder, output_folder, fold, configuration=configuration)
     return f"{'✅' if success else '❌'} {msg}"
 
@@ -613,23 +619,27 @@ with gr.Blocks(title=config.UI_TITLE) as app:
                     eval_results = gr.Markdown("Results will appear here...")
 
             # Inference Events
-            inf_refresh_btn.click(fn=refresh_inference_models, outputs=[inf_model_dropdown])
+            inf_refresh_btn.click(
+                fn=refresh_inference_models, 
+                inputs=[nnunet_results_input, nnunet_raw_input],
+                outputs=[inf_model_dropdown]
+            )
             
             inf_model_dropdown.change(
                 fn=refresh_folds,
-                inputs=[inf_model_dropdown, inf_config_dropdown],
+                inputs=[inf_model_dropdown, inf_config_dropdown, nnunet_results_input, nnunet_raw_input],
                 outputs=[inf_fold_dropdown]
             )
             
             inf_config_dropdown.change(
                 fn=refresh_folds,
-                inputs=[inf_model_dropdown, inf_config_dropdown],
+                inputs=[inf_model_dropdown, inf_config_dropdown, nnunet_results_input, nnunet_raw_input],
                 outputs=[inf_fold_dropdown]
             )
             
             run_inf_btn.click(
                 fn=run_inference_ui,
-                inputs=[inf_model_dropdown, inf_input_folder, inf_output_folder, inf_fold_dropdown, inf_config_dropdown],
+                inputs=[inf_model_dropdown, inf_input_folder, inf_output_folder, inf_fold_dropdown, inf_config_dropdown, nnunet_results_input, nnunet_raw_input],
                 outputs=[inf_status]
             )
             
@@ -640,7 +650,11 @@ with gr.Blocks(title=config.UI_TITLE) as app:
             )
             
             # Initial load
-            app.load(fn=refresh_inference_models, outputs=[inf_model_dropdown])
+            app.load(
+                fn=refresh_inference_models, 
+                inputs=[nnunet_results_input, nnunet_raw_input],
+                outputs=[inf_model_dropdown]
+            )
     
     gr.Markdown("---")
     gr.Markdown("💡 **Tips**: Make sure nnUNetv2 is installed in your environment. Follow the tabs from left to right for the complete workflow.")

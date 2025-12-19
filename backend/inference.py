@@ -52,13 +52,32 @@ class InferenceManager:
         Run inference using nnUNetv2_predict
         """
         try:
+            # Set environment variables to ensure correct paths are used
+            import os
+            env = os.environ.copy()
+            
+            # Use absolute paths to ensure we're using the correct directories
+            nnunet_raw_abs = str(self.nnunet_raw.resolve())
+            nnunet_preprocessed_abs = str(self.nnunet_raw.parent.resolve() / 'nnUNet_preprocessed')
+            nnunet_results_abs = str(self.nnunet_results.resolve())
+            
+            env['nnUNet_raw'] = nnunet_raw_abs
+            env['nnUNet_preprocessed'] = nnunet_preprocessed_abs  
+            env['nnUNet_results'] = nnunet_results_abs
+            
+            print(f"DEBUG: Using paths:")
+            print(f"  nnUNet_raw: {nnunet_raw_abs}")
+            print(f"  nnUNet_preprocessed: {nnunet_preprocessed_abs}")
+            print(f"  nnUNet_results: {nnunet_results_abs}")
+            
             # Check if trainer exists, fallback to default if not
             model_dir = self.nnunet_results / dataset_name / f"{trainer}__{plans}__{configuration}"
             if not model_dir.exists():
                 trainer = "nnUNetTrainer" # Fallback
             
+            import sys
             cmd = [
-                "nnUNetv2_predict",
+                sys.executable, "run_inference_custom.py",
                 "-i", input_folder,
                 "-o", output_folder,
                 "-d", dataset_name.replace("Dataset", "").split("_")[0], # Extract ID
@@ -69,13 +88,16 @@ class InferenceManager:
                 "-chk", chk
             ]
             
-            # Run command
+            print(f"DEBUG: Running command: {' '.join(cmd)}")
+            
+            # Run command with correct environment
             process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                universal_newlines=True
+                universal_newlines=True,
+                env=env  # Use our custom environment
             )
             
             stdout, _ = process.communicate()

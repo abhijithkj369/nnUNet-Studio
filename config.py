@@ -4,10 +4,13 @@ Configuration settings for nnUNetv2 Training UI
 import os
 from pathlib import Path
 
-# Default paths
-DEFAULT_NNUNET_RAW = os.environ.get("nnUNet_raw", "./nnUNet_raw")
-DEFAULT_NNUNET_PREPROCESSED = os.environ.get("nnUNet_preprocessed", "./nnUNet_preprocessed")
-DEFAULT_NNUNET_RESULTS = os.environ.get("nnUNet_results", "./nnUNet_results")
+# Project root
+PROJECT_ROOT = Path(__file__).parent.resolve()
+
+# Default paths - Force local project folders to avoid conflicts with system env vars
+DEFAULT_NNUNET_RAW = str(PROJECT_ROOT / "nnUNet_raw")
+DEFAULT_NNUNET_PREPROCESSED = str(PROJECT_ROOT / "nnUNet_preprocessed")
+DEFAULT_NNUNET_RESULTS = str(PROJECT_ROOT / "nnUNet_results")
 
 # Supported file formats
 SUPPORTED_FILE_ENDING = ".nii.gz"
