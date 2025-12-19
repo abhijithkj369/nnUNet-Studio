@@ -208,6 +208,12 @@ def start_training_process(dataset_selection, num_epochs, fold, configuration,
         return f"❌ Error starting training: {str(e)}", None, None
 
 
+# Import InferenceManager
+from backend.inference import InferenceManager
+
+# Initialize inference manager
+inference_manager = InferenceManager(config.DEFAULT_NNUNET_RESULTS, config.DEFAULT_NNUNET_RAW)
+
 def update_training_status():
     """Update training logs, plots, and system metrics"""
     global current_trainer, metrics_parser, plotter, training_logs, system_monitor
@@ -236,64 +242,40 @@ def update_training_status():
     </div>
     """
     
-    if current_trainer is None or not current_trainer.is_training_running():
-        if training_logs:
-            # Training finished, show final status
-            log_text = "".join(training_logs[-100:])  # Last 100 lines
-            
-            # Generate final plots
-            if metrics_parser:
-                plot_data = metrics_parser.get_plot_data()
-                loss_plot, dice_plot, combined_plot = plotter.create_all_plots(plot_data)
-                # Get final progress
-                current_epoch, max_epochs, percent = metrics_parser.get_progress()
-                progress_html = f"""
-                <div style="margin-top: 10px; margin-bottom: 10px;">
-                    <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
-                        <strong>Progress: Epoch {current_epoch}/{max_epochs}</strong>
-                        <span>{percent:.1f}%</span>
-                    </div>
-                    <div style="background: #ddd; height: 20px; border-radius: 10px; overflow: hidden;">
-                        <div style="background: #4caf50; width: {percent}%; height: 100%; transition: width 0.5s;"></div>
-                    </div>
-                </div>
-                """
-                return log_text, loss_plot, dice_plot, "Training completed!", sys_html, progress_html
-        
-        return "No training running", None, None, "Idle", sys_html, "<div>Ready to train</div>"
+    # Default return values
+    log_text = "Waiting for logs..."
+    loss_fig = None
+    dice_fig = None
+    status = "Idle"
+    progress_html = "<div>Ready to train</div>"
+    best_dice_val = "N/A"
     
-    # Get latest logs
-    log_text = "".join(training_logs[-100:]) if training_logs else "Waiting for logs..."
+    if training_logs:
+        log_text = "".join(training_logs[-100:])
     
-    # Update plots
-    loss_plot_path = None
-    dice_plot_path = None
-    
-    if metrics_parser and plotter:
+    if metrics_parser:
+        # Get plots
         try:
             plot_data = metrics_parser.get_plot_data()
-            loss_plot_path, dice_plot_path, _ = plotter.create_all_plots(plot_data)
+            loss_fig, dice_fig = plotter.create_interactive_plots(plot_data)
+            best_dice_val = f"{plot_data.get('best_dice', 0.0):.4f}"
         except Exception as e:
             print(f"Error updating plots: {e}")
-    
-    
-    # Get current metrics
-    if metrics_parser:
+            
+        # Get progress and status
         latest = metrics_parser.metrics.get_latest()
         epoch = latest.get('epoch', 'N/A')
         train_loss = latest.get('train_loss')
         val_loss = latest.get('val_loss')
         dice = latest.get('dice')
         
-        # Format values
         train_loss_str = f"{train_loss:.4f}" if train_loss is not None else "N/A"
         val_loss_str = f"{val_loss:.4f}" if val_loss is not None else "N/A"
         dice_str = f"{dice:.4f}" if dice is not None else "N/A"
         
-        # Get progress
-        current_epoch, max_epochs, percent = metrics_parser.get_progress()
+        status = f"Epoch: {epoch} | Train Loss: {train_loss_str} | Val Loss: {val_loss_str} | Dice: {dice_str}"
         
-        # Create progress bar HTML
+        current_epoch, max_epochs, percent = metrics_parser.get_progress()
         progress_html = f"""
         <div style="margin-top: 10px; margin-bottom: 10px;">
             <div style="display: flex; justify-content: space-between; margin-bottom: 5px;">
@@ -306,13 +288,12 @@ def update_training_status():
         </div>
         """
         
-        status = f"Epoch: {epoch} | Train Loss: {train_loss_str} | Val Loss: {val_loss_str} | Dice: {dice_str}"
-            
-    else:
-        status = "Training in progress..."
-        progress_html = "<div>Waiting for metrics...</div>"
-    
-    return log_text, loss_plot_path, dice_plot_path, status, sys_html, progress_html
+    if current_trainer and current_trainer.is_training_running():
+        pass # Status already set above
+    elif training_logs:
+        status = "Training completed!"
+        
+    return log_text, loss_fig, dice_fig, status, sys_html, progress_html, best_dice_val
 
 
 def stop_training():
@@ -327,6 +308,37 @@ def stop_training():
             return f"⚠️ {message}"
     return "⚠️ No trainer instance found"
 
+# Inference Functions
+def refresh_inference_models():
+    models = inference_manager.list_models()
+    return gr.Dropdown(choices=models)
+
+def refresh_folds(model_name, configuration):
+    if not model_name or not configuration:
+        return gr.Dropdown(choices=[], interactive=True, allow_custom_value=True)
+    folds = inference_manager.list_folds(model_name, configuration=configuration)
+    return gr.Dropdown(choices=folds, interactive=True, allow_custom_value=True)
+
+def run_inference_ui(model_name, input_folder, output_folder, fold, configuration):
+    if not model_name or not input_folder or not output_folder or not fold or not configuration:
+        return "❌ Please fill all fields"
+    
+    success, msg = inference_manager.run_inference(model_name, input_folder, output_folder, fold, configuration=configuration)
+    return f"{'✅' if success else '❌'} {msg}"
+
+def evaluate_ui(gt_folder, pred_folder):
+    if not gt_folder or not pred_folder:
+        return "❌ Please select folders"
+        
+    results = inference_manager.evaluate_predictions(gt_folder, pred_folder)
+    if 'error' in results:
+        return f"❌ {results['error']}"
+        
+    output = "### Evaluation Results\n"
+    for k, v in results.items():
+        output += f"- **{k}**: {v:.4f}\n"
+    return output
+
 
 # Create Gradio Interface
 with gr.Blocks(title=config.UI_TITLE) as app:
@@ -337,6 +349,11 @@ with gr.Blocks(title=config.UI_TITLE) as app:
         # Tab 1: Dataset Preparation
         with gr.Tab("📁 Dataset Preparation"):
             gr.Markdown("### Step 1: Select and Validate Dataset")
+            gr.Markdown("""
+            ℹ️ **Tip**: You can work in any folder and the dataset will be copied to `nnUNet_raw` during setup. 
+            However, to avoid duplicates, you can also create your dataset directly in:
+            `nnUNet_raw/DatasetXXX_YourName/` (where XXX is your dataset ID)
+            """)
             
             with gr.Row():
                 with gr.Column():
@@ -416,8 +433,9 @@ with gr.Blocks(title=config.UI_TITLE) as app:
                         label="Dataset ID",
                         value=config.DEFAULT_DATASET_ID,
                         precision=0,
-                        info="Integer ID for your dataset (e.g., 1 for Dataset001)"
+                        info="Integer ID for your dataset (e.g., 1 for Dataset001). Must be unique!"
                     )
+                    gr.Markdown("⚠️ **Important**: Each dataset ID must be unique in nnUNet_raw to avoid preprocessing errors.")
                     
                     gr.Markdown("**Preprocessing Configuration**")
                     preprocess_configs = gr.CheckboxGroup(
@@ -497,16 +515,20 @@ with gr.Blocks(title=config.UI_TITLE) as app:
                     train_status = gr.Textbox(label="Status", lines=2)
             
             with gr.Row():
-                with gr.Column():
+                with gr.Column(scale=1):
                     gr.Markdown("**Training Logs**")
                     log_output = gr.Textbox(label="Live Logs", lines=20, max_lines=30, autoscroll=True)
                     
-                with gr.Column():
+                with gr.Column(scale=2):
                     gr.Markdown("**Metrics Visualization**")
                     progress_output = gr.HTML(label="Progress")
-                    current_status = gr.Textbox(label="Current Metrics", lines=2)
-                    loss_plot = gr.Image(label="Loss Plot", type="filepath")
-                    dice_plot = gr.Image(label="Dice Score Plot", type="filepath")
+                    
+                    with gr.Row():
+                        current_status = gr.Textbox(label="Current Metrics", lines=1)
+                        best_dice_output = gr.Textbox(label="🏆 Best Dice Score", lines=1)
+                        
+                    loss_plot = gr.Plot(label="Loss Plot")
+                    dice_plot = gr.Plot(label="Dice Score Plot")
             
             # Auto-refresh logs and plots
             refresh_timer = gr.Timer(value=2, active=True)  # Refresh every 2 seconds
@@ -514,6 +536,11 @@ with gr.Blocks(title=config.UI_TITLE) as app:
             # Event handlers
             def refresh_datasets(preprocessed_path):
                 datasets = scan_datasets(preprocessed_path)
+                return gr.Dropdown(choices=datasets)
+            
+            def load_initial_datasets():
+                """Load datasets using default config path"""
+                datasets = scan_datasets(config.DEFAULT_NNUNET_PREPROCESSED)
                 return gr.Dropdown(choices=datasets)
             
             refresh_datasets_btn.click(
@@ -524,8 +551,7 @@ with gr.Blocks(title=config.UI_TITLE) as app:
             
             # Initial load of datasets
             app.load(
-                fn=refresh_datasets,
-                inputs=[nnunet_preprocessed_input],
+                fn=load_initial_datasets,
                 outputs=[dataset_dropdown]
             )
             
@@ -543,8 +569,78 @@ with gr.Blocks(title=config.UI_TITLE) as app:
             
             refresh_timer.tick(
                 fn=update_training_status,
-                outputs=[log_output, loss_plot, dice_plot, current_status, system_metrics_html, progress_output]
+                outputs=[log_output, loss_plot, dice_plot, current_status, system_metrics_html, progress_output, best_dice_output]
             )
+
+        # Tab 4: Inference
+        with gr.Tab("🔮 Inference"):
+            gr.Markdown("### Run Inference and Evaluate Models")
+            
+            with gr.Row():
+                with gr.Column():
+                    gr.Markdown("**Model Selection**")
+                    with gr.Row():
+                        inf_model_dropdown = gr.Dropdown(label="Select Model (Dataset)", choices=[])
+                        inf_refresh_btn = gr.Button("🔄", size="sm")
+                    
+                    inf_config_dropdown = gr.Dropdown(
+                        label="Configuration",
+                        choices=["3d_fullres", "2d", "3d_lowres", "3d_cascade_fullres"],
+                        value="3d_lowres",
+                        info="Must match the configuration used during training"
+                    )
+                    
+                    inf_fold_dropdown = gr.Dropdown(
+                        label="Select Fold", 
+                        choices=[], 
+                        interactive=True,
+                        allow_custom_value=True,
+                        info="Select from available folds or type a fold name (e.g., fold_0, fold_1)"
+                    )
+                    
+                    inf_input_folder = gr.Textbox(label="Input Folder (Images)", placeholder="Path to test images")
+                    inf_output_folder = gr.Textbox(label="Output Folder (Predictions)", placeholder="Path to save predictions")
+                    
+                    run_inf_btn = gr.Button("🚀 Run Inference", variant="primary")
+                    inf_status = gr.Textbox(label="Inference Status")
+                    
+                with gr.Column():
+                    gr.Markdown("**Evaluation**")
+                    eval_gt_folder = gr.Textbox(label="Ground Truth Folder (Labels)", placeholder="Path to ground truth labels")
+                    eval_pred_folder = gr.Textbox(label="Prediction Folder", placeholder="Path to predictions (usually same as Output Folder)")
+                    
+                    evaluate_btn = gr.Button("📊 Evaluate Predictions", variant="secondary")
+                    eval_results = gr.Markdown("Results will appear here...")
+
+            # Inference Events
+            inf_refresh_btn.click(fn=refresh_inference_models, outputs=[inf_model_dropdown])
+            
+            inf_model_dropdown.change(
+                fn=refresh_folds,
+                inputs=[inf_model_dropdown, inf_config_dropdown],
+                outputs=[inf_fold_dropdown]
+            )
+            
+            inf_config_dropdown.change(
+                fn=refresh_folds,
+                inputs=[inf_model_dropdown, inf_config_dropdown],
+                outputs=[inf_fold_dropdown]
+            )
+            
+            run_inf_btn.click(
+                fn=run_inference_ui,
+                inputs=[inf_model_dropdown, inf_input_folder, inf_output_folder, inf_fold_dropdown, inf_config_dropdown],
+                outputs=[inf_status]
+            )
+            
+            evaluate_btn.click(
+                fn=evaluate_ui,
+                inputs=[eval_gt_folder, eval_pred_folder],
+                outputs=[eval_results]
+            )
+            
+            # Initial load
+            app.load(fn=refresh_inference_models, outputs=[inf_model_dropdown])
     
     gr.Markdown("---")
     gr.Markdown("💡 **Tips**: Make sure nnUNetv2 is installed in your environment. Follow the tabs from left to right for the complete workflow.")

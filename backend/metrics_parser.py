@@ -1,9 +1,9 @@
 """
-Metrics Parser for nnUNetv2 Training
-Parses training logs and extracts metrics
+Metrics parser for nnUNet training logs
+Extracts training metrics from nnUNet output
 """
 import re
-from typing import Dict, List, Optional
+from typing import List, Dict, Optional
 from dataclasses import dataclass, field
 
 
@@ -51,6 +51,7 @@ class MetricsParser:
         self.metrics = TrainingMetrics()
         self.current_epoch = -1
         self.max_epochs = max_epochs
+        self.best_dice = 0.0  # Track best dice score
         
         # Regex patterns for different log formats
         self.patterns = {
@@ -67,6 +68,7 @@ class MetricsParser:
             'nnunet_val': re.compile(r'val_loss\s+([-]?[\d\.]+)'),
             'nnunet_dice': re.compile(r'Pseudo dice\s+([\d\.]+)'),
             'nnunet_dice_list': re.compile(r'Pseudo dice\s+\[(.*?)\]'),
+            'best_dice': re.compile(r'New best EMA pseudo Dice: ([\d\.]+)')  # Pattern for best dice
         }
 
     
@@ -130,6 +132,11 @@ class MetricsParser:
         match = self.patterns['lr'].search(line)
         if match:
             extracted['lr'] = float(match.group(1))
+
+        # Try to extract best dice
+        match = self.patterns['best_dice'].search(line)
+        if match:
+            extracted['best_dice'] = float(match.group(1))
         
         return extracted if extracted else None
     
@@ -185,6 +192,10 @@ class MetricsParser:
                 else:
                     self.metrics.learning_rates.append(parsed['lr'])
 
+        # Update best dice if found
+        if 'best_dice' in parsed:
+            self.best_dice = parsed['best_dice']
+
     def get_progress(self) -> tuple[int, int, float]:
         """
         Get training progress
@@ -212,9 +223,12 @@ class MetricsParser:
             'train_losses': self.metrics.train_losses,
             'val_losses': self.metrics.val_losses,
             'dice_scores': self.metrics.dice_scores,
-            'learning_rates': self.metrics.learning_rates
+            'learning_rates': self.metrics.learning_rates,
+            'best_dice': self.best_dice  # Include best_dice in plot data
         }
     
     def reset(self):
         """Reset all metrics"""
         self.metrics = TrainingMetrics()
+        self.current_epoch = -1
+        self.best_dice = 0.0  # Reset best_dice as well

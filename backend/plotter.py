@@ -8,8 +8,10 @@ matplotlib.use('Agg')  # Use non-interactive backend
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 from pathlib import Path
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Dict
 import numpy as np
+import plotly.graph_objects as go
+import os
 
 
 class MetricsPlotter:
@@ -25,21 +27,24 @@ class MetricsPlotter:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(exist_ok=True, parents=True)
         
-        # Set style (optional, can be removed if causing issues, but usually fine)
-        # Note: style.use is global, but we can use a context manager or just set it once.
-        # For thread safety, it's better to rely on default or explicit styling on axes.
+        # Set style
         try:
             matplotlib.style.use('seaborn-v0_8-darkgrid')
         except Exception:
             matplotlib.style.use('default')
     
-    def _save_figure(self, fig: Figure, save_path: Path):
-        """Helper to save figure safely"""
+    def _save_figure(self, fig: Figure, filename: str) -> str:
+        """Save figure to file and return path"""
+        filepath = os.path.join(self.output_dir, filename)
+        
+        # Use FigureCanvasAgg to render the figure to a file
         canvas = FigureCanvasAgg(fig)
-        fig.tight_layout()
-        fig.savefig(save_path, dpi=100, bbox_inches='tight')
-        # No need to explicitly close with OO API if we let the object go out of scope,
-        # but explicit cleanup is good practice if keeping references.
+        canvas.print_figure(filepath)
+        
+        # Close the figure to free memory
+        plt.close(fig)
+        
+        return filepath
     
     def plot_losses(self, epochs: List[int], train_losses: List[float], 
                    val_losses: List[float], save_path: Optional[str] = None) -> str:
@@ -86,7 +91,10 @@ class MetricsPlotter:
         else:
             save_path = Path(save_path)
         
-        self._save_figure(fig, save_path)
+        canvas = FigureCanvasAgg(fig)
+        fig.tight_layout()
+        fig.savefig(save_path, dpi=100, bbox_inches='tight')
+        
         return str(save_path)
     
     def plot_dice_scores(self, epochs: List[int], dice_scores: List[float],
@@ -134,7 +142,10 @@ class MetricsPlotter:
         else:
             save_path = Path(save_path)
         
-        self._save_figure(fig, save_path)
+        canvas = FigureCanvasAgg(fig)
+        fig.tight_layout()
+        fig.savefig(save_path, dpi=100, bbox_inches='tight')
+        
         return str(save_path)
     
     def plot_combined(self, epochs: List[int], train_losses: List[float],
@@ -203,7 +214,10 @@ class MetricsPlotter:
         else:
             save_path = Path(save_path)
         
-        self._save_figure(fig, save_path)
+        canvas = FigureCanvasAgg(fig)
+        fig.tight_layout()
+        fig.savefig(save_path, dpi=100, bbox_inches='tight')
+        
         return str(save_path)
     
     def create_all_plots(self, plot_data: dict) -> Tuple[str, str, str]:
@@ -226,3 +240,70 @@ class MetricsPlotter:
         combined_plot = self.plot_combined(epochs, train_losses, val_losses, dice_scores)
         
         return loss_plot, dice_plot, combined_plot
+
+    def create_interactive_plots(self, data: Dict[str, List]) -> Tuple[Optional[go.Figure], Optional[go.Figure]]:
+        """
+        Create interactive plots using Plotly
+        
+        Args:
+            data: Dictionary containing lists of metrics
+            
+        Returns:
+            Tuple of (loss_figure, dice_figure)
+        """
+        epochs = data.get('epochs', [])
+        train_losses = data.get('train_losses', [])
+        val_losses = data.get('val_losses', [])
+        dice_scores = data.get('dice_scores', [])
+        
+        if not epochs:
+            return None, None
+            
+        # Create Loss Plot
+        loss_fig = go.Figure()
+        
+        if train_losses and len(train_losses) == len(epochs):
+            loss_fig.add_trace(go.Scatter(
+                x=epochs, y=train_losses,
+                mode='lines+markers',
+                name='Train Loss',
+                line=dict(color='blue')
+            ))
+            
+        if val_losses and len(val_losses) == len(epochs):
+            loss_fig.add_trace(go.Scatter(
+                x=epochs, y=val_losses,
+                mode='lines+markers',
+                name='Validation Loss',
+                line=dict(color='orange')
+            ))
+            
+        loss_fig.update_layout(
+            title='Training and Validation Loss',
+            xaxis_title='Epoch',
+            yaxis_title='Loss',
+            template='plotly_white',
+            hovermode='x unified'
+        )
+        
+        # Create Dice Plot
+        dice_fig = go.Figure()
+        
+        if dice_scores and len(dice_scores) == len(epochs):
+            dice_fig.add_trace(go.Scatter(
+                x=epochs, y=dice_scores,
+                mode='lines+markers',
+                name='Dice Score',
+                line=dict(color='green')
+            ))
+            
+        dice_fig.update_layout(
+            title='Dice Score',
+            xaxis_title='Epoch',
+            yaxis_title='Dice Score',
+            template='plotly_white',
+            hovermode='x unified',
+            yaxis=dict(range=[0, 1])  # Dice is between 0 and 1
+        )
+        
+        return loss_fig, dice_fig

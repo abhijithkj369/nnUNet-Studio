@@ -7,8 +7,9 @@ import subprocess
 import threading
 import queue
 from pathlib import Path
-from typing import Callable, Optional, Dict
+from typing import Callable, Optional, Dict, List
 import time
+import sys
 
 
 class nnUNetTrainer:
@@ -85,6 +86,25 @@ class nnUNetTrainer:
                 msg = f"Dataset is already in the correct location: {target_folder}\nNo copying needed."
                 return True, msg
             
+            # Check for existing datasets with the same ID (prevent duplicates)
+            existing_datasets = list(self.nnunet_raw.glob(f"Dataset{dataset_id:03d}_*"))
+            if existing_datasets:
+                existing_names = [d.name for d in existing_datasets]
+                # If target folder exists, that's ok (we'll overwrite it)
+                # But if OTHER folders with same ID exist, that's a problem
+                other_datasets = [d for d in existing_datasets if d.resolve() != target_folder]
+                if other_datasets:
+                    other_names = [d.name for d in other_datasets]
+                    return False, (
+                        f"ERROR: Dataset ID {dataset_id:03d} already exists in nnUNet_raw:\n"
+                        f"  Existing: {', '.join(other_names)}\n"
+                        f"  New: Dataset{dataset_id:03d}_{dataset_name}\n\n"
+                        f"This will cause preprocessing to fail with 'More than one dataset name found' error.\n"
+                        f"Please either:\n"
+                        f"  1. Use a different dataset ID, OR\n"
+                        f"  2. Delete the existing dataset folder(s) in nnUNet_raw"
+                    )
+            
             # Create target folder
             target_folder.mkdir(exist_ok=True, parents=True)
             
@@ -98,8 +118,58 @@ class nnUNetTrainer:
             for folder_name in ['imagesTr', 'labelsTr']:
                 source = dataset_folder / folder_name
                 target = target_folder / folder_name
+                
+                if not source.exists():
+                    return False, f"{folder_name} folder not found in dataset folder"
+                
+                # Remove target if exists and copy
+                if target.exists():
+                    shutil.rmtree(target)
+                shutil.copytree(source, target)
+            
+            # Copy imagesTs if exists
+            source_ts = dataset_folder / 'imagesTs'
+            if source_ts.exists():
+                target_ts = target_folder / 'imagesTs'
+                if target_ts.exists():
+                    shutil.rmtree(target_ts)
+                shutil.copytree(source_ts, target_ts)
+            
+            return True, f"Dataset prepared successfully in: {target_folder}"
+            
+        except Exception as e:
+            return False, f"Error preparing dataset: {str(e)}"
+    
+    def run_preprocessing(self, dataset_id: int, configurations: Optional[List[str]] = None, 
+                         log_callback: Optional[Callable] = None) -> tuple[bool, str]:
+        """
+        Run nnUNet preprocessing
+        
+        Args:
+            dataset_id: Dataset ID
+            configurations: List of configurations to preprocess (e.g., ['2d', '3d_fullres'])
+            log_callback: Callback function for log messages
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        try:
+            self.setup_environment()
+            
+            # Default to 3d_fullres if not specified
+            if not configurations:
+                configurations = ['3d_fullres']
+            
+            # Build preprocessing command
+            cmd = [
+                "nnUNetv2_plan_and_preprocess",
+                "-d", str(dataset_id),
+                "-c"
+            ] + configurations + ["--verify_dataset_integrity"]
+            
             if log_callback:
                 log_callback(f"Running preprocessing: {' '.join(cmd)}\n")
+                log_callback("="*80 + "\n")
             
             # Run preprocessing
             process = subprocess.Popen(
@@ -108,7 +178,8 @@ class nnUNetTrainer:
                 stderr=subprocess.STDOUT,
                 text=True,
                 bufsize=1,
-                universal_newlines=True
+                universal_newlines=True,
+                env=os.environ.copy()
             )
             
             # Stream output
@@ -157,27 +228,29 @@ class nnUNetTrainer:
             # Set number of workers
             os.environ['nnUNet_n_proc_DA'] = str(num_workers)
             
+            # Set unbuffered output for real-time logging
+            os.environ['PYTHONUNBUFFERED'] = '1'
+            
+            # Set max epochs if specified
+            if num_epochs:
+                os.environ['nnUNet_max_epochs'] = str(num_epochs)
+            
             # Build training command
-            # Use python -m to call nnUNetv2 modules (works better on Windows)
-            import sys
+            # Use our custom wrapper script to inject the custom trainer
             cmd = [
                 sys.executable,
-                "-m", "nnunetv2.run.run_training",
+                "run_training_custom.py",
                 str(dataset_id),
                 configuration,
                 str(fold),
-                "-tr", trainer,
+                "-tr", "nnUNetTrainerCustomEpochs",  # Use our custom trainer class
                 "-p", plans,
                 "--npz"  # Save softmax predictions
             ]
             
-            # Add epochs if specified
-            if num_epochs and num_epochs != 1000:  # nnUNet default is 1000
-                cmd.extend(["--c"])  # Continue from checkpoint if exists
-            
             if log_callback:
                 log_callback(f"Starting training: {' '.join(cmd)}\n")
-                log_callback(f"Training for {num_epochs} epochs\n")
+                log_callback(f"Training for {num_epochs} epochs with {num_workers} workers\n")
                 log_callback("="*80 + "\n")
             
             # Start process
